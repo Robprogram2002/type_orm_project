@@ -11,6 +11,8 @@ import {
 } from "type-graphql";
 import { Mycontext } from "../types";
 import argon2 from "argon2";
+import { EntityManager } from "@mikro-orm/postgresql";
+import { COOKIE_NAME } from "../constants";
 
 @InputType() //typos para los paramteros
 class UsernamePasswordFields {
@@ -77,13 +79,20 @@ export class UserResolver {
     }
 
     const hashed_password = await argon2.hash(options.password);
-
-    const user = em.create(User, {
-      username: options.username,
-      password: hashed_password,
-    });
+    let user;
     try {
-      await em.persistAndFlush(user);
+      const result = await (em as EntityManager)
+        .createQueryBuilder(User)
+        .getKnexQuery()
+        .insert({
+          username: options.username,
+          password: hashed_password,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .returning("*");
+
+      user = result[0];
     } catch (err) {
       if (err.code === "23505") {
         return {
@@ -96,6 +105,7 @@ export class UserResolver {
         };
       }
     }
+
     return {
       user,
     };
@@ -135,5 +145,21 @@ export class UserResolver {
     return {
       user,
     };
+  }
+
+  @Mutation(() => Boolean)
+  async logOut(@Ctx() { req, res }: Mycontext) {
+    return new Promise((resolve) => {
+      req.session?.destroy((err) => {
+        res.clearCookie(COOKIE_NAME);
+        if (err) {
+          console.log(err);
+          resolve(false);
+          return;
+        }
+
+        resolve(true);
+      });
+    });
   }
 }

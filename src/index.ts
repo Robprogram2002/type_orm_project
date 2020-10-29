@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { MikroORM } from "@mikro-orm/core";
-import { __prod__ } from "./constants";
+import { COOKIE_NAME, __prod__ } from "./constants";
 // import { Post } from "./entities/Post";
 import microConfig from "./mikro-orm.config";
 import express from "express";
@@ -13,6 +13,7 @@ import redis from "redis";
 import session from "express-session";
 import ConectRedis from "connect-redis";
 import { Mycontext } from "./types";
+import cors from "cors";
 
 const main = async () => {
   const orm = await MikroORM.init(microConfig);
@@ -25,8 +26,14 @@ const main = async () => {
   const redisClient = redis.createClient({ port: 6379 });
 
   app.use(
+    cors({
+      credentials: true,
+      origin: "http://localhost:3000",
+    })
+  );
+  app.use(
     session({
-      name: "qid",
+      name: COOKIE_NAME,
       store: new RedisStore({
         client: redisClient,
         disableTouch: true,
@@ -51,7 +58,7 @@ const main = async () => {
     context: ({ req, res }): Mycontext => ({ em: orm.em, req, res }),
   });
 
-  server.applyMiddleware({ app });
+  server.applyMiddleware({ app, cors: false });
 
   app.listen(4000, () => {
     console.log("Server running on port 4000");
