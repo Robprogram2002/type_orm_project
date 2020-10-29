@@ -11,8 +11,8 @@ import {
 } from "type-graphql";
 import { Mycontext } from "../types";
 import argon2 from "argon2";
-import { EntityManager } from "@mikro-orm/postgresql";
 import { COOKIE_NAME } from "../constants";
+import { getConnection } from "typeorm";
 
 @InputType() //typos para los paramteros
 class UsernamePasswordFields {
@@ -44,19 +44,18 @@ class UserResponse {
 @Resolver()
 export class UserResolver {
   @Query(() => User, { nullable: true })
-  async currentUser(@Ctx() { req, em }: Mycontext) {
+  async currentUser(@Ctx() { req }: Mycontext) {
     //
     if (!req.session!.userId) {
       return null;
     }
 
-    const user = await em.findOne(User, { id: req.session!.userId });
+    const user = await User.findOne({ where: { id: req.session!.userId } });
     return user;
   }
   @Mutation(() => UserResponse)
   async register(
-    @Arg("options") options: UsernamePasswordFields,
-    @Ctx() { em }: Mycontext
+    @Arg("options") options: UsernamePasswordFields
   ): Promise<UserResponse> {
     if (options.username.length <= 2) {
       return {
@@ -81,18 +80,27 @@ export class UserResolver {
     const hashed_password = await argon2.hash(options.password);
     let user;
     try {
-      const result = await (em as EntityManager)
-        .createQueryBuilder(User)
-        .getKnexQuery()
-        .insert({
+      const result = await getConnection()
+        .createQueryBuilder()
+        .insert()
+        .into(User)
+        .values({
           username: options.username,
           password: hashed_password,
-          created_at: new Date(),
-          updated_at: new Date(),
         })
-        .returning("*");
-
-      user = result[0];
+        .returning("*")
+        .execute();
+      // const result = await (em as EntityManager)
+      //   .createQueryBuilder(User)
+      //   .getKnexQuery()
+      //   .insert({
+      //     username: options.username,
+      //     password: hashed_password,
+      //     created_at: new Date(),
+      //     updated_at: new Date(),
+      //   })
+      //   .returning("*");
+      user = result.raw[0];
     } catch (err) {
       if (err.code === "23505") {
         return {
@@ -105,18 +113,15 @@ export class UserResolver {
         };
       }
     }
-
-    return {
-      user,
-    };
+    return { user };
   }
 
   @Mutation(() => UserResponse)
   async login(
     @Arg("options") options: UsernamePasswordFields,
-    @Ctx() { em, req }: Mycontext
+    @Ctx() { req }: Mycontext
   ): Promise<UserResponse> {
-    const user = await em.findOne(User, { username: options.username });
+    const user = await User.findOne({ where: { username: options.username } });
     if (!user) {
       return {
         errors: [
